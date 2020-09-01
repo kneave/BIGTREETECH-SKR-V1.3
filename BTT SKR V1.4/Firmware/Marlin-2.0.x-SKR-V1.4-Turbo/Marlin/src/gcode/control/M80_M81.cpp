@@ -1,6 +1,6 @@
 /**
  * Marlin 3D Printer Firmware
- * Copyright (c) 2020 MarlinFirmware [https://github.com/MarlinFirmware/Marlin]
+ * Copyright (c) 2019 MarlinFirmware [https://github.com/MarlinFirmware/Marlin]
  *
  * Based on Sprinter and grbl.
  * Copyright (c) 2011 Camiel Gubbels / Erik van der Zalm
@@ -16,7 +16,7 @@
  * GNU General Public License for more details.
  *
  * You should have received a copy of the GNU General Public License
- * along with this program.  If not, see <https://www.gnu.org/licenses/>.
+ * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  *
  */
 
@@ -32,7 +32,7 @@
 #endif
 
 #if HAS_SUICIDE
-  #include "../../MarlinCore.h"
+  #include "../../Marlin.h"
 #endif
 
 #if ENABLED(PSU_CONTROL)
@@ -44,7 +44,7 @@
   // Could be moved to a feature, but this is all the data
   bool powersupply_on;
 
-  #if HAS_TRINAMIC_CONFIG
+  #if HAS_TRINAMIC
     #include "../../feature/tmc_util.h"
   #endif
 
@@ -72,15 +72,16 @@
     #endif
 
     #if DISABLED(AUTO_POWER_CONTROL)
-      safe_delay(PSU_POWERUP_DELAY);
+      delay(PSU_POWERUP_DELAY); // Wait for power to settle
       restore_stepper_drivers();
-      TERN_(HAS_TRINAMIC_CONFIG, safe_delay(PSU_POWERUP_DELAY));
     #endif
 
-    TERN_(HAS_LCD_MENU, ui.reset_status());
+    #if HAS_LCD_MENU
+      ui.reset_status();
+    #endif
   }
 
-#endif // PSU_CONTROL
+#endif // ENABLED(PSU_CONTROL)
 
 /**
  * M81: Turn off Power, including Power Supply, if there is one.
@@ -92,7 +93,7 @@ void GcodeSuite::M81() {
   print_job_timer.stop();
   planner.finish_and_disable();
 
-  #if HAS_FAN
+  #if FAN_COUNT > 0
     thermalManager.zero_fan_speeds();
     #if ENABLED(PROBING_FANS_OFF)
       thermalManager.fans_paused = false;
@@ -109,6 +110,6 @@ void GcodeSuite::M81() {
   #endif
 
   #if HAS_LCD_MENU
-    LCD_MESSAGEPGM_P(PSTR(MACHINE_NAME " " STR_OFF "."));
+    LCD_MESSAGEPGM_P(PSTR(MACHINE_NAME " " MSG_OFF "."));
   #endif
 }

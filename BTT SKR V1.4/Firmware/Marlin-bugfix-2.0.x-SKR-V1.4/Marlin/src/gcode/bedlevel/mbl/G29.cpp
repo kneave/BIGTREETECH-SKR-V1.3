@@ -1,6 +1,6 @@
 /**
  * Marlin 3D Printer Firmware
- * Copyright (c) 2020 MarlinFirmware [https://github.com/MarlinFirmware/Marlin]
+ * Copyright (c) 2019 MarlinFirmware [https://github.com/MarlinFirmware/Marlin]
  *
  * Based on Sprinter and grbl.
  * Copyright (c) 2011 Camiel Gubbels / Erik van der Zalm
@@ -16,7 +16,7 @@
  * GNU General Public License for more details.
  *
  * You should have received a copy of the GNU General Public License
- * along with this program.  If not, see <https://www.gnu.org/licenses/>.
+ * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  *
  */
 
@@ -39,7 +39,7 @@
 #include "../../../module/stepper.h"
 
 #if ENABLED(EXTENSIBLE_UI)
-  #include "../../../lcd/extui/ui_api.h"
+  #include "../../../lcd/extensible_ui/ui_api.h"
 #endif
 
 // Save 130 bytes with non-duplication of PSTR
@@ -62,7 +62,9 @@ inline void echo_not_entered(const char c) { SERIAL_CHAR(c); SERIAL_ECHOLNPGM(" 
 void GcodeSuite::G29() {
 
   static int mbl_probe_index = -1;
-  TERN_(HAS_SOFTWARE_ENDSTOPS, static bool saved_soft_endstops_state);
+  #if HAS_SOFTWARE_ENDSTOPS
+    static bool saved_soft_endstops_state;
+  #endif
 
   MeshLevelingState state = (MeshLevelingState)parser.byteval('S', (int8_t)MeshReport);
   if (!WITHIN(state, 0, 5)) {
@@ -86,7 +88,7 @@ void GcodeSuite::G29() {
     case MeshStart:
       mbl.reset();
       mbl_probe_index = 0;
-      if (!ui.wait_for_move) {
+      if (!ui.wait_for_bl_move) {
         queue.inject_P(PSTR("G28\nG29 S2"));
         return;
       }
@@ -109,7 +111,9 @@ void GcodeSuite::G29() {
       else {
         // Save Z for the previous mesh position
         mbl.set_zigzag_z(mbl_probe_index - 1, current_position.z);
-        TERN_(HAS_SOFTWARE_ENDSTOPS, soft_endstops_enabled = saved_soft_endstops_state);
+        #if HAS_SOFTWARE_ENDSTOPS
+          soft_endstops_enabled = saved_soft_endstops_state;
+        #endif
       }
       // If there's another point to sample, move there with optional lift.
       if (mbl_probe_index < GRID_MAX_POINTS) {
@@ -143,7 +147,9 @@ void GcodeSuite::G29() {
           planner.synchronize();
         #endif
 
-        TERN_(LCD_BED_LEVELING, ui.wait_for_move = false);
+        #if ENABLED(LCD_BED_LEVELING)
+          ui.wait_for_bl_move = false;
+        #endif
       }
       break;
 
@@ -172,7 +178,9 @@ void GcodeSuite::G29() {
 
       if (parser.seenval('Z')) {
         mbl.z_values[ix][iy] = parser.value_linear_units();
-        TERN_(EXTENSIBLE_UI, ExtUI::onMeshUpdate(ix, iy, mbl.z_values[ix][iy]));
+        #if ENABLED(EXTENSIBLE_UI)
+          ExtUI::onMeshUpdate(ix, iy, mbl.z_values[ix][iy]);
+        #endif
       }
       else
         return echo_not_entered('Z');

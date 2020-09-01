@@ -1,6 +1,6 @@
 /**
  * Marlin 3D Printer Firmware
- * Copyright (c) 2020 MarlinFirmware [https://github.com/MarlinFirmware/Marlin]
+ * Copyright (c) 2019 MarlinFirmware [https://github.com/MarlinFirmware/Marlin]
  *
  * Based on Sprinter and grbl.
  * Copyright (c) 2011 Camiel Gubbels / Erik van der Zalm
@@ -16,7 +16,7 @@
  * GNU General Public License for more details.
  *
  * You should have received a copy of the GNU General Public License
- * along with this program.  If not, see <https://www.gnu.org/licenses/>.
+ * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  *
  */
 
@@ -35,7 +35,7 @@
   #include "../../module/probe.h"
 #endif
 
-#if HAS_MULTI_HOTEND
+#if HOTENDS > 1
   #include "../../module/tool_change.h"
 #endif
 
@@ -63,7 +63,12 @@ enum CalEnum : char {                        // the 7 main calibration points - 
 #define LOOP_CAL_RAD(VAR) LOOP_CAL_PT(VAR, __A, _7P_STEP)
 #define LOOP_CAL_ACT(VAR, _4P, _OP) LOOP_CAL_PT(VAR, _OP ? _AB : __A, _4P ? _4P_STEP : _7P_STEP)
 
-TERN_(HAS_MULTI_HOTEND, const uint8_t old_tool_index = active_extruder);
+#if HOTENDS > 1
+  const uint8_t old_tool_index = active_extruder;
+  #define AC_CLEANUP() ac_cleanup(old_tool_index)
+#else
+  #define AC_CLEANUP() ac_cleanup()
+#endif
 
 float lcd_probe_pt(const xy_pos_t &xy);
 
@@ -74,7 +79,9 @@ void ac_home() {
 }
 
 void ac_setup(const bool reset_bed) {
-  TERN_(HAS_MULTI_HOTEND, tool_change(0, true));
+  #if HOTENDS > 1
+    tool_change(0, true);
+  #endif
 
   planner.synchronize();
   remember_feedrate_scaling_off();
@@ -84,11 +91,21 @@ void ac_setup(const bool reset_bed) {
   #endif
 }
 
-void ac_cleanup(TERN_(HAS_MULTI_HOTEND, const uint8_t old_tool_index)) {
-  TERN_(DELTA_HOME_TO_SAFE_ZONE, do_blocking_move_to_z(delta_clip_start_height));
-  TERN_(HAS_BED_PROBE, probe.stow());
+void ac_cleanup(
+  #if HOTENDS > 1
+    const uint8_t old_tool_index
+  #endif
+) {
+  #if ENABLED(DELTA_HOME_TO_SAFE_ZONE)
+    do_blocking_move_to_z(delta_clip_start_height);
+  #endif
+  #if HAS_BED_PROBE
+    STOW_PROBE();
+  #endif
   restore_feedrate_and_scaling();
-  TERN_(HAS_MULTI_HOTEND, tool_change(old_tool_index, true));
+  #if HOTENDS > 1
+    tool_change(old_tool_index, true);
+  #endif
 }
 
 void print_signed_float(PGM_P const prefix, const float &f) {
@@ -173,7 +190,7 @@ static float std_dev_points(float z_pt[NPP + 1], const bool _0p_cal, const bool 
  */
 static float calibration_probe(const xy_pos_t &xy, const bool stow) {
   #if HAS_BED_PROBE
-    return probe.probe_at_point(xy, stow ? PROBE_PT_STOW : PROBE_PT_RAISE, 0, true, false);
+    return probe_at_point(xy, stow ? PROBE_PT_STOW : PROBE_PT_RAISE, 0, true);
   #else
     UNUSED(stow);
     return lcd_probe_pt(xy);
@@ -422,6 +439,7 @@ void GcodeSuite::G33() {
              _opposite_results    = (_4p_calibration && !towers_set) || probe_points >= 3,
              _endstop_results     = probe_points != 1 && probe_points != -1 && probe_points != 0,
              _angle_results       = probe_points >= 3 && towers_set;
+  static const char save_message[] PROGMEM = "Save with M500 and/or copy to Configuration.h";
   int8_t iterations = 0;
   float test_precision,
         zero_std_dev = (verbose_level ? 999.0f : 0.0f), // 0.0 in dry-run mode : forced end
@@ -448,7 +466,7 @@ void GcodeSuite::G33() {
   }
 
   // Report settings
-  PGM_P const checkingac = PSTR("Checking... AC");
+  PGM_P checkingac = PSTR("Checking... AC");
   serialprintPGM(checkingac);
   if (verbose_level == 0) SERIAL_ECHOPGM(" (DRY-RUN)");
   SERIAL_EOL();
@@ -471,7 +489,7 @@ void GcodeSuite::G33() {
     zero_std_dev_old = zero_std_dev;
     if (!probe_calibration_points(z_at_pt, probe_points, towers_set, stow_after_each)) {
       SERIAL_ECHOLNPGM("Correct delta settings with M665 and M666");
-      return ac_cleanup(TERN_(HAS_MULTI_HOTEND, old_tool_index));
+      return AC_CLEANUP();
     }
     zero_std_dev = std_dev_points(z_at_pt, _0p_calibration, _1p_calibration, _4p_calibration, _4p_opposite_points);
 
@@ -607,7 +625,8 @@ void GcodeSuite::G33() {
           sprintf_P(&mess[15], PSTR("%03i.x"), (int)LROUND(zero_std_dev_min));
         ui.set_status(mess);
         print_calibration_settings(_endstop_results, _angle_results);
-        SERIAL_ECHOLNPGM("Save with M500 and/or copy to Configuration.h");
+        serialprintPGM(save_message);
+        SERIAL_EOL();
       }
       else { // !end iterations
         char mess[15];
@@ -624,7 +643,7 @@ void GcodeSuite::G33() {
       }
     }
     else { // dry run
-      PGM_P const enddryrun = PSTR("End DRY-RUN");
+      PGM_P enddryrun = PSTR("End DRY-RUN");
       serialprintPGM(enddryrun);
       SERIAL_ECHO_SP(35);
       SERIAL_ECHOLNPAIR_F("std dev:", zero_std_dev, 3);
@@ -642,7 +661,7 @@ void GcodeSuite::G33() {
   }
   while (((zero_std_dev < test_precision && iterations < 31) || iterations <= force_iterations) && zero_std_dev > calibration_precision);
 
-  ac_cleanup(TERN_(HAS_MULTI_HOTEND, old_tool_index));
+  AC_CLEANUP();
 }
 
 #endif // DELTA_AUTO_CALIBRATION
